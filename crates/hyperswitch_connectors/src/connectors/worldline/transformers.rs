@@ -1,6 +1,6 @@
 use api_models::payments;
-use common_enums::enums::{AttemptStatus, BankNames, CaptureMethod, CountryAlpha2, Currency};
-use common_utils::{pii::Email, request::Method};
+use common_enums::enums::{AttemptStatus, BankNames, CaptureMethod, CountryAlpha2};
+use common_utils::{pii::Email, request::Method, types::MinorUnit};
 use hyperswitch_domain_models::{
     payment_method_data::{BankRedirectData, PaymentMethodData},
     router_data::{ConnectorAuthType, RouterData},
@@ -12,7 +12,7 @@ use hyperswitch_domain_models::{
     router_response_types::{PaymentsResponseData, RedirectForm, RefundsResponseData},
     types::{PaymentsAuthorizeRouterData, PaymentsCaptureRouterData, RefundsRouterData},
 };
-use hyperswitch_interfaces::{api::CurrencyUnit, errors};
+use hyperswitch_interfaces::errors;
 use masking::{PeekInterface, Secret};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -42,7 +42,7 @@ pub struct CardPaymentMethod {
 #[derive(Default, Debug, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AmountOfMoney {
-    pub amount: i64,
+    pub amount: MinorUnit,
     pub currency_code: String,
 }
 
@@ -191,17 +191,15 @@ pub struct PaymentsRequest {
 
 #[derive(Debug, Serialize)]
 pub struct WorldlineRouterData<T> {
-    amount: i64,
+    amount: MinorUnit,
     router_data: T,
 }
-impl<T> TryFrom<(&CurrencyUnit, Currency, i64, T)> for WorldlineRouterData<T> {
+impl<T> TryFrom<(MinorUnit, T)> for WorldlineRouterData<T> {
     type Error = error_stack::Report<errors::ConnectorError>;
-    fn try_from(
-        (_currency_unit, _currency, amount, item): (&CurrencyUnit, Currency, i64, T),
-    ) -> Result<Self, Self::Error> {
+    fn try_from((amount, router_data): (MinorUnit, T)) -> Result<Self, Self::Error> {
         Ok(Self {
             amount,
-            router_data: item,
+            router_data,
         })
     }
 }
@@ -648,13 +646,13 @@ pub struct WorldlineRefundRequest {
     amount_of_money: AmountOfMoney,
 }
 
-impl<F> TryFrom<&RefundsRouterData<F>> for WorldlineRefundRequest {
+impl<F> TryFrom<&WorldlineRouterData<&RefundsRouterData<F>>> for WorldlineRefundRequest {
     type Error = error_stack::Report<errors::ConnectorError>;
-    fn try_from(item: &RefundsRouterData<F>) -> Result<Self, Self::Error> {
+    fn try_from(item: &WorldlineRouterData<&RefundsRouterData<F>>) -> Result<Self, Self::Error> {
         Ok(Self {
             amount_of_money: AmountOfMoney {
-                amount: item.request.refund_amount,
-                currency_code: item.request.currency.to_string(),
+                amount: item.amount,
+                currency_code: item.router_data.request.currency.to_string(),
             },
         })
     }
